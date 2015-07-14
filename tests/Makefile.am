@@ -4,6 +4,11 @@ AM_CPPFLAGS = -I$(top_srcdir)/liblouis
 
 LDADD = $(top_builddir)/liblouis/liblouis.la
 
+capitalization_SOURCES =	\
+	brl_checks.c		\
+	brl_checks.h		\
+	capitalization.c
+
 present_progressive_SOURCES =	\
 	brl_checks.c		\
 	brl_checks.h		\
@@ -152,6 +157,7 @@ program_TESTS =					\
 	inpos_match_replace			\
 	uplow_with_unicode			\
 	present_progressive			\
+	capitalization                          \
 	capitalized_word			\
 	capitalized_with_sentance		\
 	inpos_compbrl				\
@@ -180,7 +186,8 @@ check_PROGRAMS = $(program_TESTS) check_yaml
 dist_check_SCRIPTS =		\
 	check_all_tables.pl	\
 	check_endless_loop.pl	\
-	multiple_table_path.pl
+	multiple_table_path.pl  \
+	ueb_test_data.pl
 
 # if we have Python and liblouis is configured with ucs4 then we can
 # invoke the python based tests

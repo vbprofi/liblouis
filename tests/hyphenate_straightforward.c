@@ -8,6 +8,7 @@ are permitted in any medium without royalty provided the copyright
 notice and this notice are preserved. This file is offered as-is,
 without any warranty. */
 
+#include "liblouis.h"
 #include "brl_checks.h"
 
 int main(int argc, char **argv)

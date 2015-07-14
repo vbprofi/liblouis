@@ -7,7 +7,7 @@
 #include "brl_checks.h"
 
 int check_with_mode(
-    const char *tableList, const char *str, const char *typeform,
+    const char *tableList, const char *str, const formtype *typeform,
     const char *expected, int mode, int direction);
 
 void
@@ -152,11 +152,11 @@ print_widechars(widechar * buf, int len)
    to the required format, which is an array of 0s, 1s, 2s, etc.
    For example, "0000011111000" is converted to {0,0,0,0,0,1,1,1,1,1,0,0,0}
    The caller is responsible for freeing the returned array. */
-char *
+formtype *
 convert_typeform(const char* typeform_string)
 {
   int len = strlen(typeform_string);
-  char *typeform = malloc(len * sizeof(char));
+  formtype *typeform = malloc(len * sizeof(formtype));
   int i;
   for (i=0; i<len; i++)
     typeform[i] = typeform_string[i] - '0';
@@ -167,7 +167,7 @@ convert_typeform(const char* typeform_string)
    translation is as expected and 1 otherwise. */
 int
 check_translation(const char *tableList, const char *str,
-		  const char *typeform, const char *expected)
+		  const formtype *typeform, const char *expected)
 {
   return check_translation_with_mode(tableList, str, typeform, expected, 0);
 }
@@ -176,7 +176,7 @@ check_translation(const char *tableList, const char *str,
    translation is as expected and 1 otherwise. */
 int
 check_translation_with_mode(const char *tableList, const char *str,
-			    const char *typeform, const char *expected, 
+			    const formtype *typeform, const char *expected, 
 			    int mode)
 {
     return check_with_mode(tableList, str, typeform, expected, mode, 0);
@@ -186,7 +186,7 @@ check_translation_with_mode(const char *tableList, const char *str,
    backtranslation is as expected and 1 otherwise. */
 int
 check_backtranslation(const char *tableList, const char *str,
-		  const char *typeform, const char *expected)
+		  const formtype *typeform, const char *expected)
 {
   return check_backtranslation_with_mode(tableList, str, typeform, expected, 0);
 }
@@ -195,7 +195,7 @@ check_backtranslation(const char *tableList, const char *str,
    backtranslation is as expected and 1 otherwise. */
 int
 check_backtranslation_with_mode(const char *tableList, const char *str,
-			    const char *typeform, const char *expected, 
+			    const formtype *typeform, const char *expected, 
 			    int mode)
 {
     return check_with_mode(tableList, str, typeform, expected, mode, 1);
@@ -203,7 +203,7 @@ check_backtranslation_with_mode(const char *tableList, const char *str,
 
 /* direction, 0=forward, otherwise backwards */
 int check_with_mode(
-    const char *tableList, const char *str, const char *typeform,
+    const char *tableList, const char *str, const formtype *typeform,
     const char *expected, int mode, int direction)
 {
   widechar *inbuf, *outbuf, *expectedbuf;
@@ -212,7 +212,7 @@ int check_with_mode(
   int i, rv = 0;
   int funcStatus = 0;
 
-  char *typeformbuf = NULL;
+  formtype *typeformbuf = NULL;
 
   int expectedlen = strlen(expected);
 
@@ -223,8 +223,8 @@ int check_with_mode(
   expectedbuf = malloc(sizeof(widechar) * expectedlen);
   if (typeform != NULL)
     {
-      typeformbuf = malloc(outlen);
-      memcpy(typeformbuf, typeform, outlen);
+      typeformbuf = malloc(outlen * sizeof(formtype));
+      memcpy(typeformbuf, typeform, outlen * sizeof(formtype));
     }
   inlen = extParseChars(str, inbuf);
   if (!inlen)

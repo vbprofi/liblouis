@@ -32,11 +32,57 @@
 
 /*additional bits in typebuf*/
 #define capsemph 0x8000
-#define EMPHASIS 0x000f
-#define STARTWORD 0x4000
-#define FIRSTWORD 0x2000
-#define SYLLABLEMARKS 0x00c0
-#define INTERNALMARKS 0xff00
+#define EMPHASIS 0x1fff
+#define SYLLABLEMARKS 0x6000
+#define INTERNALMARKS 0xe000
+
+/*   bits for wordBuffer   */
+#define WORD_CHAR         0x00000001
+#define WORD_RESET        0x00000002
+#define WORD_STOP         0x00000004
+#define WORD_WHOLE        0x00000008
+#define LAST_WORD_AFTER   0x01000000
+
+/*   bits for emphasisBuffer   */
+#define CAPS_BEGIN        0x00000010
+#define CAPS_END          0x00000020
+#define CAPS_WORD         0x00000040
+#define CAPS_SYMBOL       0x00000080
+#define CAPS_EMPHASIS     0x000000f0
+#define ITALIC_BEGIN      0x00000100
+#define ITALIC_END        0x00000200
+#define ITALIC_WORD       0x00000400
+#define ITALIC_SYMBOL     0x00000800
+#define ITALIC_EMPHASIS   0x00000f00
+#define UNDER_BEGIN       0x00001000
+#define UNDER_END         0x00002000
+#define UNDER_WORD        0x00004000
+#define UNDER_SYMBOL      0x00008000
+#define UNDER_EMPHASIS    0x0000f000
+#define BOLD_BEGIN        0x00010000
+#define BOLD_END          0x00020000
+#define BOLD_WORD         0x00040000
+#define BOLD_SYMBOL       0x00080000
+#define BOLD_EMPHASIS     0x000f0000
+#define SCRIPT_BEGIN      0x00100000
+#define SCRIPT_END        0x00200000
+#define SCRIPT_WORD       0x00400000
+#define SCRIPT_SYMBOL     0x00800000
+#define SCRIPT_EMPHASIS   0x00f00000
+#define TNOTE_BEGIN       0x01000000
+#define TNOTE_END         0x02000000
+#define TNOTE_WORD        0x04000000
+#define TNOTE_SYMBOL      0x08000000
+#define TNOTE_EMPHASIS    0x0f000000
+#define COMPBRL_BEGIN     0x10000000
+#define COMPBRL_END       0x20000000
+
+/*   bits for transNoteBuffer   */
+#define TRANSNOTE_BEGIN    0x00000001
+#define TRANSNOTE_END      0x00000002
+#define TRANSNOTE_WORD     0x00000004
+#define TRANSNOTE_SYMBOL   0x00000008
+#define TRANSNOTE_MASK     0x0000000f
 
 static const TranslationTableHeader *table;
 static int src, srcmax;
@@ -50,6 +96,9 @@ static widechar *currentOutput;
 static int *prevSrcMapping = NULL;
 static int *srcMapping = NULL;
 static unsigned short *typebuf = NULL;
+static unsigned int *wordBuffer = NULL;
+static unsigned int *emphasisBuffer = NULL;
+static unsigned int *transNoteBuffer = NULL;
 static unsigned char *srcSpacing = NULL;
 static unsigned char *destSpacing = NULL;
 static int haveEmphasis = 0;

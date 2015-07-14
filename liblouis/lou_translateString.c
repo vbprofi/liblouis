@@ -40,6 +40,8 @@ static int translateString ();
 static int compbrlStart = 0;
 static int compbrlEnd = 0;
 
+static int numericMode = 0;
+
 int EXPORT_CALL
 lou_translateString (const char *tableList, const widechar
 		     * inbufx,
@@ -72,13 +74,27 @@ trace_translate (const char *tableList, const widechar * inbufx,
 		 const TranslationTableRule ** rules, int *rulesLen,
 		 int modex)
 {
+/*	int i;
+
+	for(i = 0; i < *inlen; i++)
+	{
+		outbuf[i] = inbufx[i];
+		if(inputPos)
+			inputPos[i] = i;
+		if(outputPos)
+			outputPos[i] = i;
+	}
+	*inlen = i;
+	*outlen = i;
+	return 1;
+*/
   int k;
   int goodTrans = 1;
   if (tableList == NULL || inbufx == NULL || inlen == NULL || outbuf ==
       NULL || outlen == NULL)
     return 0;
-  logMessage(LOG_DEBUG, "Performing translation: tableList=%s, inlen=%d", tableList, *inlen);
-  logWidecharBuf(LOG_DEBUG, "Inbuf=", inbufx, *inlen);
+  logMessage(LOG_ALL, "Performing translation: tableList=%s, inlen=%d", tableList, *inlen);
+  logWidecharBuf(LOG_ALL, "Inbuf=", inbufx, *inlen);
   if ((modex & otherTrans))
     return other_translate (tableList, inbufx,
 			    inlen, outbuf, outlen,
@@ -98,11 +114,28 @@ trace_translate (const char *tableList, const widechar * inbufx,
   if (typeform != NULL)
     {
       for (k = 0; k < srcmax; k++)
-	if ((typebuf[k] = typeform[k] & EMPHASIS))
-	  haveEmphasis = 1;
+		{
+			typebuf[k] = typeform[k];
+			if(typebuf[k] & EMPHASIS)
+				haveEmphasis = 1;
+		}
     }
   else
     memset (typebuf, 0, srcmax * sizeof (unsigned short));
+	
+	if(wordBuffer = liblouis_allocMem(alloc_wordBuffer, srcmax, destmax))
+		memset(wordBuffer, 0, (srcmax + 4) * sizeof(unsigned int));
+	else
+		return 0;
+	if(emphasisBuffer = liblouis_allocMem(alloc_emphasisBuffer, srcmax, destmax))
+		memset(emphasisBuffer, 0, (srcmax + 4) * sizeof(unsigned int));
+	else
+		return 0;
+	if(transNoteBuffer = liblouis_allocMem(alloc_transNoteBuffer, srcmax, destmax))
+		memset(transNoteBuffer, 0, (srcmax + 4) * sizeof(unsigned int));
+	else
+		return 0;
+		
   if (!(spacing == NULL || *spacing == 'X'))
     srcSpacing = (unsigned char *) spacing;
   outputPositions = outputPos;
@@ -272,8 +305,9 @@ trace_translate (const char *tableList, const widechar * inbufx,
     }
   if (rulesLen != NULL)
     *rulesLen = appliedRulesCount;
-  logMessage(LOG_DEBUG, "Translation complete: outlen=%d", *outlen);
-  logWidecharBuf(LOG_DEBUG, "Outbuf=", (const widechar *)outbuf, *outlen);
+  logMessage(LOG_ALL, "Translation complete: outlen=%d", *outlen);
+  logWidecharBuf(LOG_ALL, "Outbuf=", (const widechar *)outbuf, *outlen);
+
   return goodTrans;
 }
 
@@ -417,7 +451,7 @@ static int srcword;
 static int doCompTrans (int start, int end);
 
 static int
-for_updatePositions (const widechar * outChars, int inLength, int outLength)
+for_updatePositions (const widechar * outChars, int inLength, int outLength, int shift)
 {
   int k;
   if ((dest + outLength) > destmax || (src + inLength) > srcmax)
@@ -454,7 +488,7 @@ for_updatePositions (const widechar * outChars, int inLength, int outLength)
 	  for (k = 0; k < outLength; k++)
 	    {
 	      if (inputPositions != NULL)
-		srcMapping[dest + k] = prevSrcMapping[src];
+		srcMapping[dest + k] = prevSrcMapping[src] + shift;
 	      if (outputPositions != NULL)
 		outputPositions[prevSrcMapping[src + k]] = dest;
 	    }
@@ -467,13 +501,13 @@ for_updatePositions (const widechar * outChars, int inLength, int outLength)
 	  for (k = 0; k < inLength; k++)
 	    {
 	      if (inputPositions != NULL)
-		srcMapping[dest + k] = prevSrcMapping[src];
+		srcMapping[dest + k] = prevSrcMapping[src] + shift;
 	      if (outputPositions != NULL)
 		outputPositions[prevSrcMapping[src + k]] = dest;
 	    }
 	  for (k = inLength; k < outLength; k++)
 	    if (inputPositions != NULL)
-	      srcMapping[dest + k] = prevSrcMapping[src];
+	      srcMapping[dest + k] = prevSrcMapping[src] + shift;
 	}
     }
   dest += outLength;
@@ -578,98 +612,9 @@ typedef enum
   lastLetter,
   singleLetter,
   word,
+  wordStop,
   lenPhrase
 } emphCodes;
-
-static int wordsMarked = 0;
-static int finishEmphasis = 0;
-static int wordCount = 0;
-static int lastWord = 0;
-static int startType = -1;
-static int endType = 0;
-
-static void
-markWords (const TranslationTableOffset * offset)
-{
-/*Mark the beginnings of words*/
-  int numWords = 0;
-  int k;
-  wordsMarked = 1;
-  numWords = offset[lenPhrase];
-  if (!numWords)
-    numWords = 4;
-  if (wordCount < numWords)
-    {
-      for (k = src; k < endType; k++)
-	if (!checkAttr (currentInput[k - 1], CTC_Letter | CTC_Digit, 0) &&
-	    checkAttr (currentInput[k], CTC_Digit | CTC_Letter, 0))
-	  typebuf[k] |= STARTWORD;
-    }
-  else
-    {
-      int firstWord = 1;
-      int lastWord = src;
-      for (k = src; k < endType; k++)
-	{
-	  if (!checkAttr (currentInput[k - 1], CTC_Letter | CTC_Digit, 0)
-	      && checkAttr (currentInput[k], CTC_Digit | CTC_Letter, 0))
-	    {
-	      if (firstWord)
-		{
-		  typebuf[k] |= FIRSTWORD;
-		  firstWord = 0;
-		}
-	      else
-		lastWord = k;
-	    }
-	}
-      typebuf[lastWord] |= STARTWORD;
-    }
-}
-
-static int
-insertIndicators ()
-{
-/*Insert italic, bold, etc. indicators before words*/
-  int typeMark;
-  int ruleFound = 0;
-  if (!wordsMarked || !haveEmphasis)
-    return 1;
-  typeMark = typebuf[src] & (STARTWORD | FIRSTWORD);
-  if (!typeMark)
-    return 1;
-  switch (typebuf[src] & EMPHASIS)
-    {
-    case italic:
-      if ((typeMark & FIRSTWORD))
-	ruleFound = brailleIndicatorDefined (table->firstWordItal);
-      else
-	ruleFound = brailleIndicatorDefined (table->lastWordItalBefore);
-      break;
-    case bold:
-      if ((typeMark & FIRSTWORD))
-	ruleFound = brailleIndicatorDefined (table->firstWordBold);
-      else
-	ruleFound = brailleIndicatorDefined (table->lastWordBoldBefore);
-      break;
-    case underline:
-      if ((typeMark & FIRSTWORD))
-	ruleFound = brailleIndicatorDefined (table->firstWordUnder);
-      else
-	ruleFound = brailleIndicatorDefined (table->lastWordUnderBefore);
-      break;
-    default:
-      ruleFound = 0;
-      break;
-    }
-  if (ruleFound)
-    {
-      if (!for_updatePositions
-	  (&indicRule->charsdots[0], 0, indicRule->dotslen))
-	return 0;
-    }
-  return 1;
-}
 
 static int
 validMatch ()
@@ -717,76 +662,9 @@ validMatch ()
   return 1;
 }
 
-static int
-checkMultCaps ()
-{
-  int k;
-  for (k = 0; k < table->lenBeginCaps; k++)
-    if (k >= srcmax - src ||
-	!checkAttr (currentInput[src + k], CTC_UpperCase, 0))
-      return 0;
-  return 1;
-}
-
 static int prevPrevType = 0;
 static int nextType = 0;
 static TranslationTableCharacterAttributes prevPrevAttr = 0;
-
-static int
-beginEmphasis (const TranslationTableOffset * offset)
-{
-  if (src != startType)
-    {
-      wordCount = finishEmphasis = wordsMarked = 0;
-      startType = lastWord = src;
-      for (endType = src; endType < srcmax; endType++)
-	{
-	  if ((typebuf[endType] & EMPHASIS) != curType)
-	    break;
-	  if (checkAttr (currentInput[endType - 1], CTC_Space, 0)
-	      && !checkAttr (currentInput[endType], CTC_Space, 0))
-	    {
-	      lastWord = endType;
-	      wordCount++;
-	    }
-	}
-    }
-  if ((beforeAttributes & CTC_Letter) && (endType - startType) ==
-      1 && brailleIndicatorDefined (offset[singleLetter]))
-    return 1;
-  else
-    if ((beforeAttributes & CTC_Letter) && brailleIndicatorDefined
-	(offset[firstLetter]))
-    return 1;
-  else if (brailleIndicatorDefined (offset[lastWordBefore]))
-    {
-      markWords (offset);
-      return 0;
-    }
-  else
-    return (brailleIndicatorDefined (offset[firstWord]));
-  return 0;
-}
-
-static int
-endEmphasis (const TranslationTableOffset * offset)
-{
-  if (wordsMarked)
-    return 0;
-  if (prevPrevType != prevType && nextType != prevType &&
-      brailleIndicatorDefined (offset[singleLetter]))
-    return 0;
-  else
-    if ((finishEmphasis || src == srcmax - 1 || (src < srcmax && ((findCharOrDots
-					      (currentInput[src + 1],
-					       0))->attributes &
-					     CTC_Letter)))
-	&& brailleIndicatorDefined (offset[lastLetter]))
-    return 1;
-  else
-    return (brailleIndicatorDefined (offset[lastWordAfter]));
-  return 0;
-}
 
 static int
 doCompEmph ()
@@ -817,17 +695,6 @@ insertBrailleIndicators (int finish)
   checkThis checkWhat = checkNothing;
   int ok = 0;
   int k;
-  if (finish == 2)
-    {
-      while (dest > 0 && (currentOutput[dest - 1] == 0 ||
-			  currentOutput[dest - 1] == B16))
-	dest--;
-      finishEmphasis = 1;
-      prevType = prevPrevType = prevTypeform & EMPHASIS;
-      curType = plain_text;
-      checkWhat = checkEndTypeform;
-    }
-  else
     {
       if (src == prevSrc && !finish)
 	return 1;
@@ -880,51 +747,8 @@ insertBrailleIndicators (int finish)
 	      case plain_text:
 		ok = 0;
 		break;
-	      case italic:
-		ok = beginEmphasis (&table->firstWordItal);
-		curType = 0;
-		break;
-	      case bold:
-		ok = beginEmphasis (&table->firstWordBold);
-		curType = 0;
-		break;
-	      case underline:
-		ok = beginEmphasis (&table->firstWordUnder);
-		curType = 0;
-		break;
-	      case computer_braille:
-		ok = 0;
-		doCompEmph ();
-		curType = 0;
-		break;
-	      case italic + underline:
-		ok = beginEmphasis (&table->firstWordUnder);
-		curType -= underline;
-		break;
-	      case italic + bold:
-		ok = beginEmphasis (&table->firstWordBold);
-		curType -= bold;
-		break;
-	      case italic + computer_braille:
-		ok = 0;
-		doCompEmph ();
-		curType -= computer_braille;
-		break;
-	      case underline + bold:
-		beginEmphasis (&table->firstWordBold);
-		curType -= bold;
-		break;
-	      case underline + computer_braille:
-		ok = 0;
-		doCompEmph ();
-		curType -= computer_braille;
-		break;
-	      case bold + computer_braille:
-		ok = 0;
-		doCompEmph ();
-		curType -= computer_braille;
-		break;
-	      default:
+		
+		default:
 		ok = 0;
 		curType = 0;
 		break;
@@ -944,47 +768,8 @@ insertBrailleIndicators (int finish)
 	      case plain_text:
 		ok = 0;
 		break;
-	      case italic:
-		ok = endEmphasis (&table->firstWordItal);
-		prevType = 0;
-		break;
-	      case bold:
-		ok = endEmphasis (&table->firstWordBold);
-		prevType = 0;
-		break;
-	      case underline:
-		ok = endEmphasis (&table->firstWordUnder);
-		prevType = 0;
-		break;
-	      case computer_braille:
-		ok = 0;
-		prevType = 0;
-		break;
-	      case italic + underline:
-		ok = endEmphasis (&table->firstWordUnder);
-		prevType -= underline;
-		break;
-	      case italic + bold:
-		ok = endEmphasis (&table->firstWordBold);
-		prevType -= bold;
-		break;
-	      case italic + computer_braille:
-		ok = 1;
-		prevType -= computer_braille;
-		break;
-	      case underline + bold:
-		ok = endEmphasis (&table->firstWordBold);
-		prevType -= bold;
-		break;
-	      case underline + computer_braille:
-		ok = 0;
-		prevType -= computer_braille;
-		break;
-	      case bold + computer_braille:
-		ok = endEmphasis (&table->firstWordBold);
-		prevType -= bold;
-		break;
-	      default:
+		
+		default:
 		ok = 0;
 		prevType = 0;
 		break;
@@ -996,17 +781,17 @@ insertBrailleIndicators (int finish)
 	    }
 	  break;
 	case checkNumber:
-	  if (brailleIndicatorDefined
-	      (table->numberSign) &&
-	      checkAttr (currentInput[src], CTC_Digit, 0) &&
-	      (prevTransOpcode == CTO_ExactDots
-	       || !(beforeAttributes & CTC_Digit))
-	      && prevTransOpcode != CTO_MidNum)
-	    {
-	      ok = 1;
-	      checkWhat = checkNothing;
-	    }
-	  else
+//	  if (brailleIndicatorDefined
+//	      (table->numberSign) &&
+//	      checkAttr (currentInput[src], CTC_Digit, 0) &&
+//	      (prevTransOpcode == CTO_ExactDots
+//	       || !(beforeAttributes & CTC_Digit))
+//	      && prevTransOpcode != CTO_MidNum)
+//	    {
+//	      ok = 1;
+//	      checkWhat = checkNothing;
+//	    }
+//	  else
 	    checkWhat = checkLetter;
 	  break;
 	case checkLetter:
@@ -1018,14 +803,14 @@ insertBrailleIndicators (int finish)
 	    }
 	  if (transOpcode == CTO_Contraction)
 	    {
-	      ok = 1;
+	      ok = 0;//1;
 	      checkWhat = checkBeginMultCaps;
 	      break;
 	    }
 	  if ((checkAttr (currentInput[src], CTC_Letter, 0)
 	       && !(beforeAttributes & CTC_Letter))
 	      && (!checkAttr (currentInput[src + 1], CTC_Letter, 0)
-		  || (beforeAttributes & CTC_Digit)))
+		))//  || (beforeAttributes & CTC_Digit)))
 	    {
 	      ok = 1;
 	      if (src > 0)
@@ -1051,41 +836,10 @@ insertBrailleIndicators (int finish)
 	    }
 	  checkWhat = checkBeginMultCaps;
 	  break;
+	  
 	case checkBeginMultCaps:
-	  if (brailleIndicatorDefined (table->beginCapitalSign) &&
-	      !(beforeAttributes & CTC_UpperCase) && checkMultCaps ())
-	    {
-	      ok = 1;
-	      if (table->capsNoCont)
-		dontContract = 1;
-	      checkWhat = checkNothing;
-	    }
-	  else
-	    checkWhat = checkSingleCap;
-	  break;
 	case checkEndMultCaps:
-	  if (brailleIndicatorDefined (table->endCapitalSign) &&
-	      (prevPrevAttr & CTC_UpperCase)
-	      && (beforeAttributes & CTC_UpperCase)
-	      && checkAttr (currentInput[src], CTC_LowerCase, 0))
-	    {
-	      ok = 1;
-	      if (table->capsNoCont)
-		dontContract = 0;
-	    }
-	  checkWhat = checkNothing;
-	  break;
 	case checkSingleCap:
-	  if (brailleIndicatorDefined (table->capitalSign) && src < srcmax
-	      && checkAttr (currentInput[src], CTC_UpperCase, 0) &&
-	      (!(beforeAttributes & CTC_UpperCase) ||
-	       table->beginCapitalSign == 0))
-	    {
-	      ok = 1;
-	      checkWhat = checkNothing;
-	    }
-	  checkWhat = checkEndMultCaps;
-	  break;
 	default:
 	  ok = 0;
 	  checkWhat = checkNothing;
@@ -1094,14 +848,13 @@ insertBrailleIndicators (int finish)
       if (ok && indicRule != NULL)
 	{
 	  if (!for_updatePositions
-	      (&indicRule->charsdots[0], 0, indicRule->dotslen))
+	      (&indicRule->charsdots[0], 0, indicRule->dotslen, 0))
 	    return 0;
 	  if (cursorStatus == 2)
 	    checkWhat = checkNothing;
 	}
     }
   while (checkWhat != checkNothing);
-  finishEmphasis = 0;
   return 1;
 }
 
@@ -1258,6 +1011,109 @@ isRepeatedWord ()
   return 0;
 }
 
+static int
+checkEmphasisChange(const int skip)
+{
+	int r, i;	
+	r = 0;
+	for(i = src + (skip + 1); i < src + transRule->charslen; i++)
+	if(emphasisBuffer[i] || transNoteBuffer[i])
+	{
+		r = 1;
+		break;
+	}
+	return r;
+}
+
+static int
+inSequence()
+{
+	int i, j, s, match;
+	//TODO:  all caps words
+	//const TranslationTableCharacter *c = NULL;
+	
+	/*   check before sequence   */
+	for(i = src - 1; i >= 0; i--)
+	{
+		if(checkAttr(currentInput[i], CTC_SeqBefore, 0))
+			continue;
+		if(!(checkAttr(currentInput[i], CTC_Space | CTC_SeqDelimiter, 0)))
+			return 0;
+		break;
+	}
+	
+	/*   check after sequence   */
+	for(i = src + transRule->charslen; i < srcmax; i++)
+	{
+		/*   check sequence after patterns   */
+		if(table->seqPatternsCount)
+		{
+			match = 0;
+			for(j = i, s = 0; j <= srcmax && s < table->seqPatternsCount; j++, s++)
+			{
+				/*   matching   */
+				if(match == 1)
+				{
+					if(table->seqPatterns[s])
+					{
+						if(currentInput[j] == table->seqPatterns[s])
+							match = 1;
+						else
+						{
+							match = -1;
+							j = i - 1;
+						}
+					}
+					
+					/*   found match   */
+					else
+					{
+						/*   pattern at end of input   */
+						if(j >= srcmax)
+							return 1;
+							
+						i = j;
+						break;
+					}
+				}
+				
+				/*   looking for match   */
+				else if(match == 0)
+				{
+					if(table->seqPatterns[s])
+					{
+						if(currentInput[j] == table->seqPatterns[s])
+							match = 1;
+						else
+						{
+							match = -1;
+							j = i - 1;
+						}
+					}
+				}
+				
+				/*   next pattarn   */
+				else if(match == -1)
+				{
+					if(!table->seqPatterns[s])
+					{
+						match = 0;
+						j = i - 1;
+					}
+				}
+			}
+		}
+		
+		if(checkAttr(currentInput[i], CTC_SeqAfter, 0))
+			continue;
+		if(!(checkAttr(currentInput[i], CTC_Space | CTC_SeqDelimiter, 0)))
+			return 0;
+		break;
+	}
+	
+	return 1;
+}
+
 static void
 for_selectRule ()
 {
@@ -1266,10 +1122,10 @@ for_selectRule ()
   int tryThis;
   const TranslationTableCharacter *character2;
   int k;
+	TranslationTableOffset ruleOffset = 0;
   curCharDef = findCharOrDots (currentInput[src], 0);
   for (tryThis = 0; tryThis < 3; tryThis++)
     {
-      TranslationTableOffset ruleOffset = 0;
       unsigned long int makeHash = 0;
       switch (tryThis)
 	{
@@ -1287,6 +1143,8 @@ for_selectRule ()
 	  if (!(length >= 1))
 	    break;
 	  length = 1;
+			if(curCharDef->attributes & CTC_UpperCase)
+				curCharDef = findCharOrDots(curCharDef->lowercase, 0);
 	  ruleOffset = curCharDef->otherRules;
 	  break;
 	case 2:		/*No rule found */
@@ -1345,6 +1203,8 @@ for_selectRule ()
 		  case CTO_Syllable:
 		    transOpcode = CTO_Always;
 		  case CTO_Always:
+					if(checkEmphasisChange(0))
+						break;
 		    if (dontContract || (mode & noContractions))
 		      break;
 		    return;
@@ -1373,10 +1233,20 @@ for_selectRule ()
 		  case CTO_WholeWord:
 		    if (dontContract || (mode & noContractions))
 		      break;
+					if(checkEmphasisChange(0))
+						break;
 		  case CTO_Contraction:
+					if(table->usesSequences)
+					{
+						if(inSequence())
+							return;
+					}
+					else
+					{
 		    if ((beforeAttributes & (CTC_Space | CTC_Punctuation))
 			&& (afterAttributes & (CTC_Space | CTC_Punctuation)))
 		      return;
+					}
 		    break;
 		  case CTO_PartWord:
 		    if (dontContract || (mode & noContractions))
@@ -1551,14 +1421,14 @@ undefinedCharacter (widechar c)
 	& table->ruleArea[table->undefined];
       if (!for_updatePositions
 	  (&transRule->charsdots[transRule->charslen],
-	   transRule->charslen, transRule->dotslen))
+	   transRule->charslen, transRule->dotslen, 0))
 	return 0;
       return 1;
     }
   display = showString (&c, 1);
   for (k = 0; k < strlen (display); k++)
     displayDots[k] = getDotsForChar (display[k]);
-  if (!for_updatePositions (displayDots, 1, strlen(display)))
+  if (!for_updatePositions (displayDots, 1, strlen(display), 0))
     return 0;
   return 1;
 }
@@ -1567,7 +1437,8 @@ static int
 putCharacter (widechar character)
 {
 /*Insert the dots equivalent of a character into the output buffer */
-  TranslationTableCharacter *chardef;
+	const TranslationTableRule *rule = NULL;
+  TranslationTableCharacter *chardef = NULL;
   TranslationTableOffset offset;
   if (cursorStatus == 2)
     return 1;
@@ -1575,16 +1446,30 @@ putCharacter (widechar character)
   if ((chardef->attributes & CTC_Letter) && (chardef->attributes &
 					     CTC_UpperCase))
     chardef = findCharOrDots (chardef->lowercase, 0);
-  offset = chardef->definitionRule;
+	//TODO:  for_selectRule and this function screw up Digit and LitDigit
+	//NOTE:  removed Litdigit from tables.
+	//if(!chardef->otherRules)
+		offset = chardef->definitionRule;
+	//else
+	//{
+	//	offset = chardef->otherRules;
+	//	rule = (TranslationTableRule *)&table->ruleArea[offset];
+	//	while(rule->charsnext && rule->charsnext != chardef->definitionRule)
+	//	{
+	//		rule = (TranslationTableRule *)&table->ruleArea[offset];
+	//		if(rule->charsnext)
+	//			offset = rule->charsnext;
+	//	}
+	//}
   if (offset)
     {
-      const TranslationTableRule *rule = (TranslationTableRule *)
+      rule = (TranslationTableRule *)
 	& table->ruleArea[offset];
       if (rule->dotslen)
-	return for_updatePositions (&rule->charsdots[1], 1, rule->dotslen);
+	return for_updatePositions (&rule->charsdots[1], 1, rule->dotslen, 0);
       {
 	widechar d = getDotsForChar (character);
-	return for_updatePositions (&d, 1, 1);
+	return for_updatePositions (&d, 1, 1, 0);
       }
     }
   return undefinedCharacter (character);
@@ -1640,10 +1525,10 @@ putCompChar (widechar character)
       const TranslationTableRule *rule = (TranslationTableRule *)
 	& table->ruleArea[offset];
       if (rule->dotslen)
-	return for_updatePositions (&rule->charsdots[1], 1, rule->dotslen);
+	return for_updatePositions (&rule->charsdots[1], 1, rule->dotslen, 0);
       {
 	widechar d = getDotsForChar (character);
-	return for_updatePositions (&d, 1, 1);
+	return for_updatePositions (&d, 1, 1, 0);
       }
     }
   return undefinedCharacter (character);
@@ -1656,7 +1541,7 @@ doCompTrans (int start, int end)
   int haveEndsegment = 0;
   if (cursorStatus != 2 && brailleIndicatorDefined (table->begComp))
     if (!for_updatePositions
-	(&indicRule->charsdots[0], 0, indicRule->dotslen))
+	(&indicRule->charsdots[0], 0, indicRule->dotslen, 0))
       return 0;
   for (k = start; k < end; k++)
     {
@@ -1674,7 +1559,7 @@ doCompTrans (int start, int end)
 	  transRule = (TranslationTableRule *) & table->ruleArea[compdots];
 	  if (!for_updatePositions
 	      (&transRule->charsdots[transRule->charslen],
-	       transRule->charslen, transRule->dotslen))
+	       transRule->charslen, transRule->dotslen, 0))
 	    return 0;
 	}
       else if (!putCompChar (currentInput[k]))
@@ -1682,13 +1567,13 @@ doCompTrans (int start, int end)
     }
   if (cursorStatus != 2 && brailleIndicatorDefined (table->endComp))
     if (!for_updatePositions
-	(&indicRule->charsdots[0], 0, indicRule->dotslen))
+	(&indicRule->charsdots[0], 0, indicRule->dotslen, 0))
       return 0;
   src = end;
   if (haveEndsegment)
     {
       widechar endSegment = ENDSEGMENT;
-      if (!for_updatePositions (&endSegment, 0, 1))
+      if (!for_updatePositions (&endSegment, 0, 1, 0))
 	return 0;
     }
   return 1;
@@ -1792,8 +1677,8 @@ markSyllables ()
 	  syllableMarker++;
 	  if (syllableMarker > 3)
 	    syllableMarker = 1;
-	  currentMark = syllableMarker << 6;
-	  /*The syllable marker is bits 6 and 7 of typebuf. */
+	  currentMark = syllableMarker << 13;
+	  /*The syllable marker is bits 13 and 14 of typebuf. */
 	  if ((src + transCharslen) > srcmax)
 	    return 0;
 	  for (k = 0; k < transCharslen; k++)
@@ -1806,26 +1691,1014 @@ markSyllables ()
   return 1;
 }
 
+static void
+resolveEmphasisWords(
+	int *buffer,
+	const TranslationTableOffset *offset,
+	const unsigned int bit_begin,
+	const unsigned int bit_end,
+	const unsigned int bit_word,
+	const unsigned int bit_symbol)
+{
+	int in_word = 0, in_emp = 0, word_start = -1, word_whole = 0, word_stop;
+	int i;
+	
+	for(i = 0; i < srcmax; i++)
+	{			
+		//TODO:  give each enphasis its own whole word bit?
+		/*   clear out previous whole word markings   */
+		wordBuffer[i] &= ~WORD_WHOLE;
+		
+		if(typebuf[i] & passage_break)
+		{
+			if(in_emp && in_word)
+			
+			/*   if whole word is one symbol,
+				 turn it into a symbol   */
+			if(word_start >= 0)
+			{
+				if(word_start + 1 == i)
+					buffer[word_start] |= bit_symbol;
+				else
+					buffer[word_start] |= bit_word;
+				wordBuffer[word_start] |= word_whole;
+			}
+			
+			in_word = 0;
+			word_whole = 0;
+			word_start = -1;
+		}
+	
+		/*   check if at beginning of emphasis   */
+		if(!in_emp)
+		if(buffer[i] & bit_begin)
+		{
+			in_emp = 1;
+			buffer[i] &= ~bit_begin;
+			
+			/*   emphasis started inside word   */
+			if(in_word)
+			{
+				word_start = i;
+				word_whole = 0;
+			}
+		}
+		
+		/*   check if at end of emphasis   */
+		if(in_emp)
+		if(buffer[i] & bit_end)
+		{
+			in_emp = 0;
+			buffer[i] &= ~bit_end;
+						
+			if(in_word && word_start >= 0)
+			{				
+				/*   check if emphasis ended inside a word   */
+				word_stop = bit_end | bit_word;
+				if(i < srcmax && wordBuffer[i] & WORD_CHAR)
+					word_whole = 0;
+				else
+					word_stop = 0;
+						
+				/*   if whole word is one symbol,
+					 turn it into a symbol   */
+				if(word_start + 1 == i)
+					buffer[word_start] |= bit_symbol;
+				else
+				{
+					buffer[word_start] |= bit_word;
+					buffer[i] |= word_stop;
+				}
+				wordBuffer[word_start] |= word_whole;
+			}
+		}
+		
+		/*   check if at beginning of word   */
+		if(!in_word)
+		if(wordBuffer[i] & WORD_CHAR)
+		{
+			in_word = 1;
+			if(in_emp)
+			{
+				word_whole = WORD_WHOLE;
+				word_start = i;
+			}
+		}
+		
+		/*   check if at end of word   */
+		if(in_word)
+		if(i == srcmax || !(wordBuffer[i] & WORD_CHAR))
+		{			
+			/*   made it through whole word   */
+			if(in_emp && word_start >= 0)
+			{			
+				/*   if word is one symbol,
+				     turn it into a symbol   */
+				if(word_start + 1 == i)
+						buffer[word_start] |= bit_symbol;
+				else
+					buffer[word_start] |= bit_word;
+				wordBuffer[word_start] |= word_whole;	
+			}
+				
+			in_word = 0;
+			word_whole = 0;		
+			word_start = -1;
+		}
+	}
+	
+	/*   clean up end   */
+	if(in_emp)
+	{
+		buffer[i] &= ~bit_end;
+		
+		if(in_word)
+		if(word_start >= 0)
+		{		
+			/*   if word is one symbol,
+				 turn it into a symbol   */
+			if(word_start + 1 == i)
+					buffer[word_start] |= bit_symbol;
+			else
+				buffer[word_start] |= bit_word;
+			wordBuffer[word_start] |= word_whole;
+		}
+	}
+}
+
+static void
+convertToPassage(
+	const int pass_start,
+	const int pass_end,
+	const int word_start,
+	int *buffer,
+	const TranslationTableOffset *offset,
+	const unsigned int bit_begin,
+	const unsigned int bit_end,
+	const unsigned int bit_word,
+	const unsigned int bit_symbol)
+{
+	int i;
+	
+	for(i = pass_start; i <= pass_end; i++)
+	if(wordBuffer[i] & WORD_WHOLE)
+	{
+		buffer[i] &= ~(bit_symbol | bit_word);
+		wordBuffer[i] &= ~WORD_WHOLE;
+	}
+	
+	buffer[pass_start] |= bit_begin;
+	if(   brailleIndicatorDefined(offset[lastLetter])
+	   || brailleIndicatorDefined(offset[lastWordAfter]))
+		buffer[pass_end] |= bit_end;
+	else if(brailleIndicatorDefined(offset[lastWordBefore]))
+		buffer[word_start] |= bit_end;
+}
+
+static void
+resolveEmphasisPassages(
+	int *buffer,
+	const TranslationTableOffset *offset,
+	const unsigned int bit_begin,
+	const unsigned int bit_end,
+	const unsigned int bit_word,
+	const unsigned int bit_symbol)
+{
+	int word_cnt = 0, pass_start = -1, pass_end = -1, in_word = 0, in_pass = 0;
+	int word_start = -1;
+	int i;
+	
+	if(!offset[lenPhrase])
+		return;
+	
+	for(i = 0; i < srcmax; i++)
+	{		
+		/*   hit passage_break   */
+		if(typebuf[i] & passage_break)
+		{
+			if(in_pass)
+			{
+				if(!in_word)
+				{
+					if(word_cnt >= offset[lenPhrase])
+					if(pass_end >= 0)
+					{
+						convertToPassage(
+							pass_start, pass_end, word_start, buffer, offset,
+							bit_begin, bit_end, bit_word, bit_symbol);
+					}
+				}
+				else
+				{
+					if(word_cnt >= offset[lenPhrase])
+					if(pass_end >= 0)
+					{
+						convertToPassage(
+							pass_start, i, word_start, buffer, offset,
+							bit_begin, bit_end, bit_word, bit_symbol);
+					}
+				}
+			}
+			in_pass = 0;
+			in_word = 0;
+		}
+		
+		/*   check if at beginning of word   */
+		if(!in_word)
+		if(wordBuffer[i] & WORD_CHAR)
+		{
+			in_word = 1;
+			if(wordBuffer[i] & WORD_WHOLE)
+			{
+				if(!in_pass)
+				{
+					in_pass = 1;
+					pass_start = i;
+					pass_end = -1;
+					word_cnt = 1;
+				}
+				else
+					word_cnt++;
+				word_start = i;
+				continue;
+			}
+			else if(in_pass)
+			{
+				if(word_cnt >= offset[lenPhrase])
+				if(pass_end >= 0)
+				{
+					convertToPassage(
+						pass_start, pass_end, word_start, buffer, offset,
+						bit_begin, bit_end, bit_word, bit_symbol);
+				}
+				in_pass = 0;
+			}
+		}
+		
+		/*   check if at end of word   */
+		if(in_word)
+		if(i == srcmax || !(wordBuffer[i] & WORD_CHAR))
+		{
+			in_word = 0;
+			if(in_pass)
+				pass_end = i;
+		}
+		
+		if(in_pass)
+		if(   buffer[i] & bit_begin
+		   || buffer[i] & bit_end
+		   || buffer[i] & bit_word
+		   || buffer[i] & bit_symbol)
+		{
+			if(word_cnt >= offset[lenPhrase])
+			if(pass_end >= 0)
+			{
+				convertToPassage(
+					pass_start, pass_end, word_start, buffer, offset,
+					bit_begin, bit_end, bit_word, bit_symbol);
+			}
+			in_pass = 0;
+		}	
+	}
+	
+	if(in_pass)
+	{
+		if(word_cnt >= offset[lenPhrase])
+		if(pass_end >= 0)
+		{
+			convertToPassage(
+				pass_start, i, word_start, buffer, offset,
+				bit_begin, bit_end, bit_word, bit_symbol);
+		}
+	}
+}
+
+static void
+resolveEmphasisResets(
+	int *buffer,
+	const TranslationTableOffset *offset,
+	const unsigned int bit_begin,
+	const unsigned int bit_end,
+	const unsigned int bit_word,
+	const unsigned int bit_symbol)
+{
+	int in_word = 0, in_pass = 0, word_start = -1, word_reset = 0, letter_cnt;
+	int i;
+	
+	for(i = 0; i < srcmax; i++)
+	{
+		if(in_pass)
+		if(buffer[i] & bit_end)
+			in_pass = 0;
+		
+		if(!in_pass)
+		if(buffer[i] & bit_begin)
+		{
+			in_pass = 1;
+			
+			//TODO:  passage break in middle of word
+			/*   passage break means no more word_reset   */
+			if(typebuf[i] & passage_break)
+				word_reset = 0;
+		}
+		else
+		{		
+			if(!in_word)
+			if(buffer[i] & bit_word)
+			{
+				/*   deal with case when reset
+				     was at beginning of word   */
+				if(wordBuffer[i] & WORD_RESET || !checkAttr(currentInput[i], CTC_Letter, 0))
+				{
+					/*   not just one reset by itself   */
+					if(wordBuffer[i + 1] & WORD_CHAR)
+					{
+						buffer[i + 1] |= bit_word;
+						if(wordBuffer[i] & WORD_WHOLE)
+							wordBuffer[i + 1] |= WORD_WHOLE;
+					}					
+					buffer[i] &= ~bit_word;
+					wordBuffer[i] &= ~WORD_WHOLE;
+					
+					/*   if reset is a letter, make it a symbol   */
+					if(checkAttr(currentInput[i], CTC_Letter, 0))
+						buffer[i] |= bit_symbol;
+					
+					continue;
+				}
+				
+				in_word = 1;
+				word_start = i;
+				letter_cnt = 0;
+				word_reset = 0;
+			}
+			
+			/*   it is possible for a character to have been
+			     marked as a symbol when it should not be one   */
+			else if(buffer[i] & bit_symbol)
+			if(wordBuffer[i] & WORD_RESET || !checkAttr(currentInput[i], CTC_Letter, 0))
+				buffer[i] &= ~bit_symbol;
+			
+			if(in_word)
+			
+			/*   at end of word   */
+			if(i == srcmax || !(wordBuffer[i] & WORD_CHAR)
+			   || (buffer[i] & bit_word && buffer[i] & bit_end))
+			{
+				in_word = 0;
+				
+				/*   check if symbol   */
+				if(letter_cnt == 1)
+				{
+					buffer[word_start] |= bit_symbol;
+					buffer[word_start] &= ~bit_word;
+					wordBuffer[word_start] &= ~WORD_WHOLE;
+					buffer[i] &= ~(bit_end | bit_word);
+				}
+				
+				/*   if word ended on a reset or last char was a reset,
+				     get rid of end bits   */
+				if(word_reset || wordBuffer[i] & WORD_RESET || !checkAttr(currentInput[i], CTC_Letter, 0))
+					buffer[i] &= ~(bit_end | bit_word);
+				
+				/*   if word ended when it began, get rid of all bits   */
+				if(i == word_start)
+				{
+					buffer[word_start] &= ~bit_word;
+					wordBuffer[word_start] &= ~WORD_WHOLE;
+					buffer[i] &= ~(bit_end | bit_word);					
+				}
+			}
+			else
+			{
+				/*   hit reset   */
+				if(wordBuffer[i] & WORD_RESET || !checkAttr(currentInput[i], CTC_Letter, 0))
+				{
+					/*   check if symbol if not already reseting   */
+					if(letter_cnt == 1)
+					{
+						buffer[word_start] |= bit_symbol;
+						buffer[word_start] &= ~bit_word;
+						wordBuffer[word_start] &= ~WORD_WHOLE;
+						//buffer[i] &= ~(bit_end | WORD_STOP);
+					}
+					
+					/*   if reset is a letter, make it the new word_start   */
+					if(checkAttr(currentInput[i], CTC_Letter, 0))
+					{
+						word_reset = 0;	
+						word_start = i;
+						letter_cnt = 1;
+						buffer[i] |= bit_word;
+					}
+					else
+						word_reset = 1;		
+						
+					continue;
+				}
+				
+				if(word_reset)
+				{
+					word_reset = 0;
+					word_start = i;
+					letter_cnt = 0;
+					buffer[i] |= bit_word;
+				}		
+				
+				letter_cnt++;
+			}	
+		}
+	}
+	
+	/*   clean up end   */		
+	if(in_word)
+	{		
+		/*   check if symbol   */
+		if(letter_cnt == 1)
+		{
+			buffer[word_start] |= bit_symbol;
+			buffer[word_start] &= ~bit_word;
+			wordBuffer[word_start] &= ~WORD_WHOLE;
+			buffer[i] &= ~(bit_end | bit_word);
+		}
+		
+		if(word_reset)
+			buffer[i] &= ~(bit_end | bit_word);
+	}
+}
+
+static void
+markEmphases()
+{
+	const TranslationTableOffset *offset;
+	int caps_start = -1;
+	int under_start = -1;
+	int bold_start = -1;
+	int italic_start = -1;
+	int script_start = -1;
+	int tnote_start = -1;
+	int trans_start[5] = {-1,-1,-1,-1,-1}, trans_bit;
+	int i, j;
+		
+	for(i = 0; i < srcmax; i++)
+	{
+		if(!checkAttr(currentInput[i], CTC_Space, 0))
+			wordBuffer[i] |= WORD_CHAR;
+			
+		if(   typebuf[i] & word_reset
+		)//   || checkAttr(currentInput[i], CTC_WordReset, 0))
+			wordBuffer[i] |= WORD_RESET;
+		
+	
+		if(checkAttr(currentInput[i], CTC_UpperCase, 0))
+		{
+			if(caps_start < 0)
+				caps_start = i;
+		}
+		else if(caps_start >= 0)
+		{
+			/*   caps should keep going until this   */
+			if(   checkAttr(currentInput[i], CTC_Letter, 0)
+			   && checkAttr(currentInput[i], CTC_LowerCase, 0))
+			{
+				emphasisBuffer[caps_start] |= CAPS_BEGIN;
+				emphasisBuffer[i] |= CAPS_END;
+				caps_start = -1;
+			}
+		}
+		
+		if(!haveEmphasis)
+			continue;
+	
+		if(typebuf[i] & underline)
+		{
+			if(under_start < 0)
+				under_start = i;
+		}
+		else if(under_start >= 0)
+		{
+			emphasisBuffer[under_start] |= UNDER_BEGIN;
+			emphasisBuffer[i] |= UNDER_END;
+			under_start = -1;
+		}
+
+		if(typebuf[i] & bold)
+		{
+			if(bold_start < 0)
+				bold_start = i;
+		}
+		else if(bold_start >= 0)
+		{
+			emphasisBuffer[bold_start] |= BOLD_BEGIN;
+			emphasisBuffer[i] |= BOLD_END;
+			bold_start = -1;
+		}
+
+		if(typebuf[i] & italic)
+		{
+			if(italic_start < 0)
+				italic_start = i;
+		}
+		else if(italic_start >= 0)
+		{
+			emphasisBuffer[italic_start] |= ITALIC_BEGIN;
+			emphasisBuffer[i] |= ITALIC_END;
+			italic_start = -1;
+		}
+
+		if(typebuf[i] & script)
+		{
+			if(script_start < 0)
+				script_start = i;
+		}
+		else if(script_start >= 0)
+		{
+			emphasisBuffer[script_start] |= SCRIPT_BEGIN;
+			emphasisBuffer[i] |= SCRIPT_END;
+			script_start = -1;
+		}
+
+		if(typebuf[i] & trans_note)
+		{
+			if(tnote_start < 0)
+				tnote_start = i;
+		}
+		else if(tnote_start >= 0)
+		{
+			emphasisBuffer[tnote_start] |= TNOTE_BEGIN;
+			emphasisBuffer[i] |= TNOTE_END;
+			tnote_start = -1;
+		}
+		
+		trans_bit = trans_note_1;
+		for(j = 0; j < 5; j++)
+		{		
+			if(typebuf[i] & trans_bit)
+			{
+				if(trans_start[j] < 0)
+					trans_start[j] = i;
+			}
+			else if(trans_start[j] >= 0)
+			{
+				transNoteBuffer[trans_start[j]] |= (TRANSNOTE_BEGIN << (j * 4));
+				transNoteBuffer[i] |= (TRANSNOTE_END << (j * 4));
+				trans_start[j] = -1;
+			}
+			trans_bit <<= 1;
+		}
+	}
+	
+	/*   clean up srcmax   */
+	if(caps_start >= 0)
+	{
+		emphasisBuffer[caps_start] |= CAPS_BEGIN;
+		emphasisBuffer[srcmax] |= CAPS_END;
+	}
+
+	if(haveEmphasis)
+	{	
+		if(under_start >= 0)
+		{
+			emphasisBuffer[under_start] |= UNDER_BEGIN;
+			emphasisBuffer[srcmax] |= UNDER_END;
+		}
+		if(bold_start >= 0)
+		{
+			emphasisBuffer[bold_start] |= BOLD_BEGIN;
+			emphasisBuffer[srcmax] |= BOLD_END;
+		}
+		if(italic_start >= 0)
+		{
+			emphasisBuffer[italic_start] |= ITALIC_BEGIN;
+			emphasisBuffer[srcmax] |= ITALIC_END;
+		}
+		if(script_start >= 0)
+		{
+			emphasisBuffer[script_start] |= SCRIPT_BEGIN;
+			emphasisBuffer[srcmax] |= SCRIPT_END;
+		}
+		if(tnote_start >= 0)
+		{
+			emphasisBuffer[tnote_start] |= TNOTE_BEGIN;
+			emphasisBuffer[srcmax] |= TNOTE_END;
+		}
+	}
+	
+	resolveEmphasisWords(emphasisBuffer, &table->firstWordCaps,
+	                     CAPS_BEGIN, CAPS_END, CAPS_WORD, CAPS_SYMBOL);
+	resolveEmphasisPassages(emphasisBuffer, &table->firstWordCaps,
+	                        CAPS_BEGIN, CAPS_END, CAPS_WORD, CAPS_SYMBOL);
+	resolveEmphasisResets(emphasisBuffer, &table->firstWordCaps,
+	                      CAPS_BEGIN, CAPS_END, CAPS_WORD, CAPS_SYMBOL);
+	if(!haveEmphasis)
+		return;
+		
+	resolveEmphasisWords(emphasisBuffer, &table->firstWordUnder,
+	                     UNDER_BEGIN, UNDER_END, UNDER_WORD, UNDER_SYMBOL);
+	resolveEmphasisPassages(emphasisBuffer, &table->firstWordUnder,
+	                        UNDER_BEGIN, UNDER_END, UNDER_WORD, UNDER_SYMBOL);
+					
+	resolveEmphasisWords(emphasisBuffer, &table->firstWordBold,
+	                     BOLD_BEGIN, BOLD_END, BOLD_WORD, BOLD_SYMBOL);
+	resolveEmphasisPassages(emphasisBuffer, &table->firstWordBold,
+	                        BOLD_BEGIN, BOLD_END, BOLD_WORD, BOLD_SYMBOL);
+					
+	resolveEmphasisWords(emphasisBuffer, &table->firstWordItal,
+	                     ITALIC_BEGIN, ITALIC_END, ITALIC_WORD, ITALIC_SYMBOL);
+	resolveEmphasisPassages(emphasisBuffer, &table->firstWordItal,
+	                        ITALIC_BEGIN, ITALIC_END, ITALIC_WORD, ITALIC_SYMBOL);
+					
+	resolveEmphasisWords(emphasisBuffer, &table->firstWordScript,
+	                     SCRIPT_BEGIN, SCRIPT_END, SCRIPT_WORD, SCRIPT_SYMBOL);
+	resolveEmphasisPassages(emphasisBuffer, &table->firstWordScript,
+	                        SCRIPT_BEGIN, SCRIPT_END, SCRIPT_WORD, SCRIPT_SYMBOL);
+					
+//	resolveEmphasisWords(emphasisBuffer, &table->firstWordTransNote,
+//	                     TNOTE_BEGIN, TNOTE_END, TNOTE_WORD, TNOTE_SYMBOL);
+//	resolveEmphasisPassages(emphasisBuffer, &table->firstWordTransNote,
+//	                        TNOTE_BEGIN, TNOTE_END, TNOTE_WORD, TNOTE_SYMBOL);
+
+	for(i = 0; i < 5; i++)
+	{
+		switch(i)
+		{
+		case 0:  offset = &table->firstWordTrans1; break;
+		case 1:  offset = &table->firstWordTrans2; break;
+		case 2:  offset = &table->firstWordTrans3; break;
+		case 3:  offset = &table->firstWordTrans4; break;
+		case 4:  offset = &table->firstWordTrans5; break;
+		}
+		resolveEmphasisWords(
+			transNoteBuffer,
+			offset,
+			TRANSNOTE_BEGIN << (i * 4),
+			TRANSNOTE_END << (i * 4),
+			TRANSNOTE_WORD << (i * 4),
+			TRANSNOTE_SYMBOL << (i * 4));
+		resolveEmphasisPassages(
+			transNoteBuffer,
+			offset,
+			TRANSNOTE_BEGIN << (i * 4),
+			TRANSNOTE_END << (i * 4),
+			TRANSNOTE_WORD << (i * 4),
+			TRANSNOTE_SYMBOL << (i * 4));
+	}
+}
+
+static void
+insertEmphasis(
+	const int *buffer,
+	const int at,
+	const TranslationTableOffset *offset,
+	const unsigned int bit_begin,
+	const unsigned int bit_end,
+	const unsigned int bit_word,
+	const unsigned int bit_symbol)
+{	
+	if(buffer[at] & bit_symbol)
+	{
+		if(brailleIndicatorDefined(offset[singleLetter]))
+			for_updatePositions(
+				&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+	}
+	
+	if(buffer[at] & bit_word
+	//   && !(buffer[at] & bit_begin)
+	   && !(buffer[at] & bit_end))
+	{
+		if(brailleIndicatorDefined(offset[word]))
+			for_updatePositions(
+				&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+	}
+	
+	if(buffer[at] & bit_begin)
+	{
+		if(brailleIndicatorDefined(offset[firstWord]))
+			for_updatePositions(
+				&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+		else if(brailleIndicatorDefined(offset[firstLetter]))
+			for_updatePositions(
+				&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+	}
+}
+
+static void
+insertEmphasisEnd(
+	const int *buffer,
+	const int at,
+	const TranslationTableOffset *offset,
+	const unsigned int bit_end,
+	const unsigned int bit_word)
+{
+	if(buffer[at] & bit_end)
+	{
+		if(buffer[at] & bit_word)
+		{
+			if(brailleIndicatorDefined(offset[wordStop]))
+				for_updatePositions(
+					&indicRule->charsdots[0], 0, indicRule->dotslen, -1);
+		}
+		else
+		{
+			if(brailleIndicatorDefined(offset[lastLetter]))
+				for_updatePositions(
+					&indicRule->charsdots[0], 0, indicRule->dotslen, -1);
+			else if(brailleIndicatorDefined(offset[lastWordAfter]))
+				for_updatePositions(
+					&indicRule->charsdots[0], 0, indicRule->dotslen, -1);
+			else if(brailleIndicatorDefined(offset[lastWordBefore]))
+				for_updatePositions(
+					&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+		}
+	}
+}
+
+static int
+endCount(
+	const int *buffer,
+	const int at,
+	const unsigned int bit_end,
+	const unsigned int bit_begin,
+	const unsigned int bit_word)
+{
+	if(!(buffer[at] & bit_end))
+		return 0;
+	int i, cnt = 1;	
+	for(i = at - 1; i >= 0; i--)
+	if(buffer[i] & bit_begin || buffer[i] & bit_word)
+		break;
+	else
+		cnt++;
+	return cnt;
+}
+
+static void
+insertEmphasesAt(const int at)
+{
+	const TranslationTableOffset *offset;
+	int mask;
+	int type_counts[11];
+	int i, j, max;
+	
+	/*   simple case   */
+	if(!haveEmphasis)
+	{
+		/*   insert graded 1 mode indicator   */
+		if(transOpcode == CTO_Contraction)
+		if(brailleIndicatorDefined(table->noContractSign))
+			for_updatePositions(
+				&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+
+		if(emphasisBuffer[at] & CAPS_EMPHASIS)
+		{
+			insertEmphasis(
+				emphasisBuffer, at, &table->firstWordCaps,
+				CAPS_BEGIN, CAPS_END, CAPS_WORD, CAPS_SYMBOL);
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordCaps, CAPS_END, CAPS_WORD);
+		}
+		return;
+	}
+	
+	/*   The order of inserting the end symbols must be the reverse
+	     of the insertions of the begin symbols so that they will
+	     nest properly when multiple emphases start and end at
+	     the same place   */
+#define CAPS_COUNT     0
+#define UNDER_COUNT    1
+#define BOLD_COUNT     2
+#define ITALIC_COUNT   3
+#define SCRIPT_COUNT   4
+#define TNOTE_COUNT    5
+#define TRANS1_COUNT   6
+#define TRANS2_COUNT   7
+#define TRANS3_COUNT   8
+#define TRANS4_COUNT   9
+#define TRANS5_COUNT   10
+	
+	type_counts[CAPS_COUNT] 
+		= endCount(emphasisBuffer, at, CAPS_END, CAPS_BEGIN, CAPS_WORD);
+	type_counts[BOLD_COUNT]
+		= endCount(emphasisBuffer, at, BOLD_END, BOLD_BEGIN, BOLD_WORD);
+	type_counts[UNDER_COUNT]
+		= endCount(emphasisBuffer, at, UNDER_END, UNDER_BEGIN, UNDER_WORD);
+	type_counts[ITALIC_COUNT]
+		= endCount(emphasisBuffer, at, ITALIC_END, ITALIC_BEGIN, ITALIC_WORD);
+	type_counts[SCRIPT_COUNT]
+		= endCount(emphasisBuffer, at, SCRIPT_END, SCRIPT_BEGIN, SCRIPT_WORD);
+	type_counts[TNOTE_COUNT]
+		= endCount(emphasisBuffer, at, TNOTE_END, TNOTE_BEGIN, TNOTE_WORD);
+	type_counts[TRANS1_COUNT]
+		= endCount(transNoteBuffer, at, TRANSNOTE_END, TRANSNOTE_BEGIN, TRANSNOTE_WORD);
+	type_counts[TRANS2_COUNT]
+		= endCount(transNoteBuffer, at, TRANSNOTE_END << 4, TRANSNOTE_BEGIN << 4, TRANSNOTE_WORD << 4);
+	type_counts[TRANS3_COUNT]
+		= endCount(transNoteBuffer, at, TRANSNOTE_END << 8, TRANSNOTE_BEGIN << 8, TRANSNOTE_WORD << 8);
+	type_counts[TRANS4_COUNT]
+		= endCount(transNoteBuffer, at, TRANSNOTE_END << 12, TRANSNOTE_BEGIN << 12, TRANSNOTE_WORD << 12);
+	type_counts[TRANS5_COUNT]
+		= endCount(transNoteBuffer, at, TRANSNOTE_END << 16, TRANSNOTE_BEGIN << 16, TRANSNOTE_WORD << 16);
+	
+	for(i = 0; i < 8; i++)
+	{
+		max = 0;
+		for(j = 1; j < 9; j++)
+		if(type_counts[max] < type_counts[j])
+			max = j;
+		if(!type_counts[max])
+			break;
+		type_counts[max] = 0;
+		switch(max)
+		{	
+		case CAPS_COUNT:		
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordCaps, CAPS_END, CAPS_WORD);
+			break;			
+		case ITALIC_COUNT:
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordItal, ITALIC_END, ITALIC_WORD);
+			break;
+		case UNDER_COUNT:
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordUnder, UNDER_END, UNDER_WORD);
+			break;
+		case BOLD_COUNT:
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordBold, BOLD_END, BOLD_WORD);
+			break;
+		case SCRIPT_COUNT:
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordScript, SCRIPT_END, SCRIPT_WORD);
+			break;
+		case TNOTE_COUNT:
+			insertEmphasisEnd(
+				emphasisBuffer, at, &table->firstWordTransNote, TNOTE_END, TNOTE_WORD);
+			break;
+		case TRANS1_COUNT:
+			insertEmphasisEnd(
+				transNoteBuffer, at, &table->firstWordTrans1, TRANSNOTE_END, TRANSNOTE_END);
+			break;
+		case TRANS2_COUNT:
+			insertEmphasisEnd(
+				transNoteBuffer, at, &table->firstWordTrans2, TRANSNOTE_END << 4, TRANSNOTE_END << 4);
+			break;
+		case TRANS3_COUNT:
+			insertEmphasisEnd(
+				transNoteBuffer, at, &table->firstWordTrans3, TRANSNOTE_END << 8, TRANSNOTE_END << 8);
+			break;
+		case TRANS4_COUNT:
+			insertEmphasisEnd(
+				transNoteBuffer, at, &table->firstWordTrans4, TRANSNOTE_END << 12, TRANSNOTE_END << 12);
+			break;
+		case TRANS5_COUNT:
+			insertEmphasisEnd(
+				transNoteBuffer, at, &table->firstWordTrans5, TRANSNOTE_END << 16, TRANSNOTE_END << 16);
+			break;
+		}
+	}
+	
+	for(i = 4; i >= 0; i--)
+	{
+		mask = TRANSNOTE_MASK << (i * 4);
+		if(transNoteBuffer[at] & mask)
+		{
+			switch(i)
+			{
+			case 0:  offset = &table->firstWordTrans1; break;
+			case 1:  offset = &table->firstWordTrans2; break;
+			case 2:  offset = &table->firstWordTrans3; break;
+			case 3:  offset = &table->firstWordTrans4; break;
+			case 4:  offset = &table->firstWordTrans5; break;
+			}
+			insertEmphasis(
+				transNoteBuffer, at, offset,
+				TRANSNOTE_BEGIN << (i * 4),
+				TRANSNOTE_END << (i * 4),
+				TRANSNOTE_WORD << (i * 4),
+				TRANSNOTE_SYMBOL << (i * 4));
+		}
+	}
+	if(emphasisBuffer[at] & TNOTE_EMPHASIS)
+		insertEmphasis(
+			emphasisBuffer, at, &table->firstWordTransNote,
+			TNOTE_BEGIN, TNOTE_END, TNOTE_WORD, TNOTE_SYMBOL);
+	if(emphasisBuffer[at] & SCRIPT_EMPHASIS)
+		insertEmphasis(
+			emphasisBuffer, at, &table->firstWordScript,
+			SCRIPT_BEGIN, SCRIPT_END, SCRIPT_WORD, SCRIPT_SYMBOL);
+	if(emphasisBuffer[at] & ITALIC_EMPHASIS)
+		insertEmphasis(
+			emphasisBuffer, at, &table->firstWordItal,
+			ITALIC_BEGIN, ITALIC_END, ITALIC_WORD, ITALIC_SYMBOL);
+	if(emphasisBuffer[at] & BOLD_EMPHASIS)
+		insertEmphasis(
+			emphasisBuffer, at, &table->firstWordBold,
+			BOLD_BEGIN, BOLD_END, BOLD_WORD, BOLD_SYMBOL);			
+	if(emphasisBuffer[at] & UNDER_EMPHASIS)
+		insertEmphasis(
+			emphasisBuffer, at, &table->firstWordUnder,
+			UNDER_BEGIN, UNDER_END, UNDER_WORD, UNDER_SYMBOL);
+	
+	/*   insert graded 1 mode indicator   */
+	if(transOpcode == CTO_Contraction)
+	if(brailleIndicatorDefined(table->noContractSign))
+		for_updatePositions(
+			&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+
+	/*   insert capitaliztion last so it will be closest to word   */
+	if(emphasisBuffer[at] & CAPS_EMPHASIS)
+		insertEmphasis(
+			emphasisBuffer, at, &table->firstWordCaps,
+			CAPS_BEGIN, CAPS_END, CAPS_WORD, CAPS_SYMBOL);
+
+}
+
+static int pre_src;
+
+static void
+insertEmphases()
+{
+	int at;
+	
+	for(at = pre_src; at <= src; at++)
+		insertEmphasesAt(at);
+	
+	pre_src = src + 1;
+}
+
+static void
+checkNumericMode()
+{
+	int i;
+	
+	if(!brailleIndicatorDefined(table->numberSign))
+		return;
+	
+	/*   not in numeric mode   */
+	if(!numericMode)
+	{
+		if(checkAttr(currentInput[src], CTC_Digit | CTC_LitDigit, 0))
+		{
+			numericMode = 1;
+			dontContract = 1;
+			for_updatePositions(
+				&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+		}
+		else if(checkAttr(currentInput[src], CTC_NumericMode, 0))
+		{
+			for(i = src + 1; i < srcmax; i++)
+			{
+				if(checkAttr(currentInput[i], CTC_Digit | CTC_LitDigit, 0))
+				{
+					numericMode = 1;
+					for_updatePositions(
+						&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+					break;
+				}
+				else if(!checkAttr(currentInput[i], CTC_NumericMode, 0))
+					break;
+			}
+		}
+	}
+	
+	/*   in numeric mode   */
+	else
+	{
+		if(!checkAttr(currentInput[src], CTC_Digit | CTC_LitDigit | CTC_NumericMode, 0))
+		{
+			numericMode = 0;
+			if(brailleIndicatorDefined(table->noContractSign))
+			if(checkAttr(currentInput[src], CTC_NumericNoContract, 0))
+					for_updatePositions(
+						&indicRule->charsdots[0], 0, indicRule->dotslen, 0);
+		}
+	}
+}
+
 static int
 translateString ()
 {
 /*Main translation routine */
   int k;
   markSyllables ();
+	numericMode = 0;
   srcword = 0;
   destword = 0;        		/* last word translated */
   dontContract = 0;
   prevTransOpcode = CTO_None;
-  wordsMarked = 0;
   prevType = prevPrevType = curType = nextType = prevTypeform = plain_text;
-  startType = prevSrc = -1;
+  prevSrc = -1;
   src = dest = 0;
   srcIncremented = 1;
+	pre_src = 0;
   memset (passVariables, 0, sizeof(int) * NUMVAR);
   if (typebuf && table->capitalSign)
     for (k = 0; k < srcmax; k++)
       if (checkAttr (currentInput[k], CTC_UpperCase, 0))
         typebuf[k] |= capsemph;
+		
+	markEmphases();
+
   while (src < srcmax)
     {        			/*the main translation loop */
       setBefore ();
@@ -1833,8 +2706,9 @@ translateString ()
         goto failure;
       if (src >= srcmax)
         break;
-      if (!insertIndicators ())
-        goto failure;
+
+		//insertEmphases();
+
       for_selectRule ();
       if (appliedRules != NULL && appliedRulesCount < maxAppliedRules)
         appliedRules[appliedRulesCount++] = transRule;
@@ -1852,6 +2726,15 @@ translateString ()
         }
       if (!insertBrailleIndicators (1))
         goto failure;
+
+//		if(transOpcode == CTO_Contraction)
+//		if(brailleIndicatorDefined(table->noContractSign))
+//		if(!for_updatePositions(
+//			&indicRule->charsdots[0], 0, indicRule->dotslen, 0))
+//			goto failure;
+		insertEmphases();
+		checkNumericMode();
+
       if (transOpcode == CTO_Context || findAttribOrSwapRules ())
         switch (transOpcode)
           {
@@ -1869,6 +2752,11 @@ translateString ()
           }
 
 /*Processing before replacement*/
+
+		/*   check if leaving no contraction (grade 1) mode   */
+		if(checkAttr(currentInput[src], CTC_SeqDelimiter | CTC_Space, 0))
+			dontContract = 0;
+			
       switch (transOpcode)
         {
         case CTO_EndNum:
@@ -1900,15 +2788,15 @@ translateString ()
           }
           break;
         case CTO_DecPoint:
-          if (table->numberSign)
-            {
-              TranslationTableRule *numRule = (TranslationTableRule *)
-        	& table->ruleArea[table->numberSign];
-              if (!for_updatePositions
-        	  (&numRule->charsdots[numRule->charslen],
-        	   numRule->charslen, numRule->dotslen))
-        	goto failure;
-            }
+//          if (table->numberSign)
+//            {
+//              TranslationTableRule *numRule = (TranslationTableRule *)
+//        	& table->ruleArea[table->numberSign];
+//              if (!for_updatePositions
+//        	  (&numRule->charsdots[numRule->charslen],
+//        	   numRule->charslen, numRule->dotslen, 0))
+//        	goto failure;
+//            }
           transOpcode = CTO_MidNum;
           break;
         case CTO_NoCont:
@@ -1946,6 +2834,13 @@ translateString ()
               src++;
               break;
             }
+//		case CTO_Contraction:
+//		
+//			if(brailleIndicatorDefined(table->noContractSign))
+//			if(!for_updatePositions(
+//				&indicRule->charsdots[0], 0, indicRule->dotslen, 0))
+//				goto failure;
+			
         default:
           if (cursorStatus == 2)
             cursorStatus = 1;
@@ -1955,7 +2850,7 @@ translateString ()
         	{
         	  if (!for_updatePositions
         	      (&transRule->charsdots[transCharslen],
-        	       transCharslen, transRule->dotslen))
+        	       transCharslen, transRule->dotslen, 0))
         	    goto failure;
         	}
               else
@@ -2059,10 +2954,11 @@ translateString ()
       if ((transOpcode >= CTO_Always && transOpcode <= CTO_None) ||
           (transOpcode >= CTO_Digit && transOpcode <= CTO_LitDigit))
         prevTransOpcode = transOpcode;
-    }        			/*end of translation loop */
-  if (haveEmphasis && !wordsMarked && prevTypeform != plain_text
-      && src > 2 && typebuf[src - 1] == typebuf[src - 2])
-    insertBrailleIndicators (2);
+    }        	
+	
+	transOpcode = CTO_Space;
+	insertEmphases();
+		
 failure:
   if (destword != 0 && src < srcmax
       && !checkAttr (currentInput[src], CTC_Space, 0))

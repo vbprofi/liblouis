@@ -44,6 +44,7 @@ extern "C"
 #define NUMSWAPS 50
 #define NUMVAR 50
 #define LETSIGNSIZE 128
+#define SEQPATTERNSIZE 128
 #define CHARSIZE sizeof(widechar)
 #define DEFAULTRULESIZE 50
 #define ENDSEGMENT 0xffff
@@ -88,7 +89,13 @@ extern "C"
     CTC_Class1 = 0X200,
     CTC_Class2 = 0X400,
     CTC_Class3 = 0X800,
-    CTC_Class4 = 0X1000
+    CTC_Class4 = 0X1000,
+	//CTC_WordReset = 0X2000,
+	CTC_NumericMode = 0x2000,
+	CTC_NumericNoContract = 0x4000,
+	CTC_SeqDelimiter = 0x10000,
+	CTC_SeqBefore = 0x20000,
+	CTC_SeqAfter = 0x40000,
   } TranslationTableCharacterAttribute;
 
   typedef enum
@@ -196,11 +203,24 @@ extern "C"
     CTO_LastWordCapsBefore,
     CTO_LastWordCapsAfter,
     CTO_LenCapsPhrase,
+    CTO_FirstLetterCaps,
+    CTO_LastLetterCaps,
+    CTO_SingleLetterCaps,
+    CTO_CapsWord,
+	CTO_CapsWordStop,
     CTO_LetterSign,
     CTO_NoLetsignBefore,
     CTO_NoLetsign,
     CTO_NoLetsignAfter,
+    
     CTO_NumberSign,
+	CTO_NumericModeChars,
+	CTO_NumericNoContractChars,
+	CTO_SeqDelimiter,
+	CTO_SeqBeforeChars,
+	CTO_SeqAfterChars,
+	CTO_SeqAfterPattern,
+	
     CTO_FirstWordItal,
     CTO_ItalSign,
     CTO_LastWordItalBefore,
@@ -211,6 +231,7 @@ extern "C"
     CTO_LastLetterItal,
     CTO_SingleLetterItal,
     CTO_ItalWord,
+    CTO_ItalWordStop,
     CTO_LenItalPhrase,
     CTO_FirstWordBold,
     CTO_BoldSign,
@@ -222,6 +243,7 @@ extern "C"
     CTO_LastLetterBold,
     CTO_SingleLetterBold,
     CTO_BoldWord,
+	CTO_BoldWordStop,
     CTO_LenBoldPhrase,
     CTO_FirstWordUnder,
     CTO_UnderSign,
@@ -233,7 +255,79 @@ extern "C"
     CTO_LastLetterUnder,
     CTO_SingleLetterUnder,
     CTO_UnderWord,
+	CTO_UnderWordStop,
     CTO_LenUnderPhrase,
+    
+	CTO_SingleLetterScript,
+	CTO_ScriptWord,
+	CTO_ScriptWordStop,
+	CTO_FirstLetterScript,
+	CTO_LastLetterScript,
+	CTO_FirstWordScript,
+	CTO_LastWordScriptBefore,
+	CTO_LastWordScriptAfter,
+	CTO_LenScriptPhrase,
+    
+	CTO_SingleLetterTrans1,
+	CTO_Trans1Word,
+	CTO_Trans1WordStop,
+	CTO_FirstLetterTrans1,
+	CTO_LastLetterTrans1,
+	CTO_FirstWordTrans1,
+	CTO_LastWordTrans1Before,
+	CTO_LastWordTrans1After,
+	CTO_LenTrans1Phrase,
+    
+	CTO_SingleLetterTrans2,
+	CTO_Trans2Word,
+	CTO_Trans2WordStop,
+	CTO_FirstLetterTrans2,
+	CTO_LastLetterTrans2,
+	CTO_FirstWordTrans2,
+	CTO_LastWordTrans2Before,
+	CTO_LastWordTrans2After,
+	CTO_LenTrans2Phrase,
+    
+	CTO_SingleLetterTrans3,
+	CTO_Trans3Word,
+	CTO_Trans3WordStop,
+	CTO_FirstLetterTrans3,
+	CTO_LastLetterTrans3,
+	CTO_FirstWordTrans3,
+	CTO_LastWordTrans3Before,
+	CTO_LastWordTrans3After,
+	CTO_LenTrans3Phrase,
+    
+	CTO_SingleLetterTrans4,
+	CTO_Trans4Word,
+	CTO_Trans4WordStop,
+	CTO_FirstLetterTrans4,
+	CTO_LastLetterTrans4,
+	CTO_FirstWordTrans4,
+	CTO_LastWordTrans4Before,
+	CTO_LastWordTrans4After,
+	CTO_LenTrans4Phrase,
+    
+	CTO_SingleLetterTrans5,
+	CTO_Trans5Word,
+	CTO_Trans5WordStop,
+	CTO_FirstLetterTrans5,
+	CTO_LastLetterTrans5,
+	CTO_FirstWordTrans5,
+	CTO_LastWordTrans5Before,
+	CTO_LastWordTrans5After,
+	CTO_LenTrans5Phrase,
+    
+	CTO_SingleLetterTransNote,
+	CTO_TransNoteWord,
+	CTO_TransNoteWordStop,
+	CTO_FirstLetterTransNote,
+	CTO_LastLetterTransNote,
+	CTO_FirstWordTransNote,
+	CTO_LastWordTransNoteBefore,
+	CTO_LastWordTransNoteAfter,
+	CTO_LenTransNotePhrase,
+
     CTO_BegComp,
     CTO_CompBegEmph1,
     CTO_CompEndEmph1,
@@ -281,6 +375,7 @@ extern "C"
     CTO_ExactDots,
     CTO_NoCross,
     CTO_Syllable,
+	CTO_NoContractSign,
     CTO_NoCont,
     CTO_CompBrl,
     CTO_Literal,
@@ -305,6 +400,8 @@ extern "C"
     CTO_EndNum,			/*end of number */
     CTO_DecPoint,
     CTO_Hyphen,
+	//CTO_Apostrophe,
+	//CTO_Initial,
     CTO_NoBreak,
     CTO_None,
 /*Internal opcodes */
@@ -314,8 +411,11 @@ extern "C"
     CTO_FirstWordCapsRule,
     CTO_LastWordCapsBeforeRule,
     CTO_LastWordCapsAfterRule,
+    CTO_CapsWordRule,
+	CTO_CapsWordStopRule,
     CTO_LetterRule,
     CTO_NumberRule,
+	CTO_NoContractRule,
     CTO_FirstWordItalRule,
     CTO_LastWordItalBeforeRule,
     CTO_LastWordItalAfterRule,
@@ -323,6 +423,7 @@ extern "C"
     CTO_LastLetterItalRule,
     CTO_SingleLetterItalRule,
     CTO_ItalWordRule,
+	CTO_ItalWordStopRule,
     CTO_FirstWordBoldRule,
     CTO_LastWordBoldBeforeRule,
     CTO_LastWordBoldAfterRule,
@@ -330,6 +431,7 @@ extern "C"
     CTO_LastLetterBoldRule,
     CTO_SingleLetterBoldRule,
     CTO_BoldWordRule,
+	CTO_BoldWordStopRule,
     CTO_FirstWordUnderRule,
     CTO_LastWordUnderBeforeRule,
     CTO_LastWordUnderAfterRule,
@@ -337,6 +439,78 @@ extern "C"
     CTO_LastLetterUnderRule,
     CTO_SingleLetterUnderRule,
     CTO_UnderWordRule,
+	CTO_UnderWordStopRule,
+	
+	CTO_SingleLetterScriptRule,
+	CTO_ScriptWordRule,
+	CTO_ScriptWordStopRule,
+	CTO_FirstLetterScriptRule,
+	CTO_LastLetterScriptRule,
+	CTO_FirstWordScriptRule,
+	CTO_LastWordScriptBeforeRule,
+	CTO_LastWordScriptAfterRule,
+	CTO_LenScriptPhraseRule,
+	
+	CTO_SingleLetterTrans1Rule,
+	CTO_Trans1WordRule,
+	CTO_Trans1WordStopRule,
+	CTO_FirstLetterTrans1Rule,
+	CTO_LastLetterTrans1Rule,
+	CTO_FirstWordTrans1Rule,
+	CTO_LastWordTrans1BeforeRule,
+	CTO_LastWordTrans1AfterRule,
+	CTO_LenTrans1PhraseRule,
+	
+	CTO_SingleLetterTrans2Rule,
+	CTO_Trans2WordRule,
+	CTO_Trans2WordStopRule,
+	CTO_FirstLetterTrans2Rule,
+	CTO_LastLetterTrans2Rule,
+	CTO_FirstWordTrans2Rule,
+	CTO_LastWordTrans2BeforeRule,
+	CTO_LastWordTrans2AfterRule,
+	CTO_LenTrans2PhraseRule,
+	
+	CTO_SingleLetterTrans3Rule,
+	CTO_Trans3WordRule,
+	CTO_Trans3WordStopRule,
+	CTO_FirstLetterTrans3Rule,
+	CTO_LastLetterTrans3Rule,
+	CTO_FirstWordTrans3Rule,
+	CTO_LastWordTrans3BeforeRule,
+	CTO_LastWordTrans3AfterRule,
+	CTO_LenTrans3PhraseRule,
+	
+	CTO_SingleLetterTrans4Rule,
+	CTO_Trans4WordRule,
+	CTO_Trans4WordStopRule,
+	CTO_FirstLetterTrans4Rule,
+	CTO_LastLetterTrans4Rule,
+	CTO_FirstWordTrans4Rule,
+	CTO_LastWordTrans4BeforeRule,
+	CTO_LastWordTrans4AfterRule,
+	CTO_LenTrans4PhraseRule,
+	
+	CTO_SingleLetterTrans5Rule,
+	CTO_Trans5WordRule,
+	CTO_Trans5WordStopRule,
+	CTO_FirstLetterTrans5Rule,
+	CTO_LastLetterTrans5Rule,
+	CTO_FirstWordTrans5Rule,
+	CTO_LastWordTrans5BeforeRule,
+	CTO_LastWordTrans5AfterRule,
+	CTO_LenTrans5PhraseRule,
+	
+	CTO_SingleLetterTransNoteRule,
+	CTO_TransNoteWordRule,
+	CTO_TransNoteWordStopRule,
+	CTO_FirstLetterTransNoteRule,
+	CTO_LastLetterTransNoteRule,
+	CTO_FirstWordTransNoteRule,
+	CTO_LastWordTransNoteBeforeRule,
+	CTO_LastWordTransNoteAfterRule,
+	CTO_LenTransNotePhraseRule,
+	
     CTO_BegCompRule,
     CTO_CompBegEmph1Rule,
     CTO_CompEndEmph1Rule,
@@ -393,12 +567,16 @@ extern "C"
     int numPasses;
     int corrections;
     int syllables;
+    int usesSequences;
     TranslationTableOffset tableSize;
     TranslationTableOffset bytesUsed;
     TranslationTableOffset noBreak;
     TranslationTableOffset undefined;
     TranslationTableOffset letterSign;
     TranslationTableOffset numberSign;
+	TranslationTableOffset noContractSign;
+    widechar seqPatterns[SEQPATTERNSIZE];
+    int seqPatternsCount;
     /*Do not change the order of the following emphasis rule pointers! 
      */
     TranslationTableOffset firstWordItal;
@@ -408,6 +586,7 @@ extern "C"
     TranslationTableOffset lastLetterItal;
     TranslationTableOffset singleLetterItal;
     TranslationTableOffset italWord;
+    TranslationTableOffset italWordStop;
     TranslationTableOffset lenItalPhrase;
     TranslationTableOffset firstWordBold;
     TranslationTableOffset lastWordBoldBefore;
@@ -416,6 +595,7 @@ extern "C"
     TranslationTableOffset lastLetterBold;
     TranslationTableOffset singleLetterBold;
     TranslationTableOffset boldWord;
+    TranslationTableOffset boldWordStop;
     TranslationTableOffset lenBoldPhrase;
     TranslationTableOffset firstWordUnder;
     TranslationTableOffset lastWordUnderBefore;
@@ -424,6 +604,7 @@ extern "C"
     TranslationTableOffset lastLetterUnder;
     TranslationTableOffset singleLetterUnder;
     TranslationTableOffset underWord;
+    TranslationTableOffset underWordStop;
     TranslationTableOffset lenUnderPhrase;
     TranslationTableOffset firstWordCaps;
     TranslationTableOffset lastWordCapsBefore;
@@ -432,7 +613,73 @@ extern "C"
     TranslationTableOffset endCapitalSign;	/*end capitals sign */
     TranslationTableOffset capitalSign;
     TranslationTableOffset CapsWord;
+    TranslationTableOffset CapsWordStop;
     TranslationTableOffset lenCapsPhrase;
+    
+    TranslationTableOffset firstWordScript;
+    TranslationTableOffset lastWordScriptBefore;
+    TranslationTableOffset lastWordScriptAfter;
+    TranslationTableOffset firstLetterScript;
+    TranslationTableOffset lastLetterScript;
+    TranslationTableOffset singleLetterScript;
+    TranslationTableOffset scriptWord;
+    TranslationTableOffset scriptWordStop;
+    TranslationTableOffset lenScriptPhrase;
+    
+    TranslationTableOffset firstWordTrans1;
+    TranslationTableOffset lastWordTrans1Before;
+    TranslationTableOffset lastWordTrans1After;
+    TranslationTableOffset firstLetterTrans1;
+    TranslationTableOffset lastLetterTrans1;
+    TranslationTableOffset singleLetterTrans1;
+    TranslationTableOffset trans1Word;
+    TranslationTableOffset trans1WordStop;
+    TranslationTableOffset lenTrans1Phrase;
+    TranslationTableOffset firstWordTrans2;
+    TranslationTableOffset lastWordTrans2Before;
+    TranslationTableOffset lastWordTrans2After;
+    TranslationTableOffset firstLetterTrans2;
+    TranslationTableOffset lastLetterTrans2;
+    TranslationTableOffset singleLetterTrans2;
+    TranslationTableOffset trans2Word;
+    TranslationTableOffset trans2WordStop;
+    TranslationTableOffset lenTrans2Phrase;
+    TranslationTableOffset firstWordTrans3;
+    TranslationTableOffset lastWordTrans3Before;
+    TranslationTableOffset lastWordTrans3After;
+    TranslationTableOffset firstLetterTrans3;
+    TranslationTableOffset lastLetterTrans3;
+    TranslationTableOffset singleLetterTrans3;
+    TranslationTableOffset trans3Word;
+    TranslationTableOffset trans3WordStop;
+    TranslationTableOffset lenTrans3Phrase;
+    TranslationTableOffset firstWordTrans4;
+    TranslationTableOffset lastWordTrans4Before;
+    TranslationTableOffset lastWordTrans4After;
+    TranslationTableOffset firstLetterTrans4;
+    TranslationTableOffset lastLetterTrans4;
+    TranslationTableOffset singleLetterTrans4;
+    TranslationTableOffset trans4Word;
+    TranslationTableOffset trans4WordStop;
+    TranslationTableOffset lenTrans4Phrase;
+    TranslationTableOffset firstWordTrans5;
+    TranslationTableOffset lastWordTrans5Before;
+    TranslationTableOffset lastWordTrans5After;
+    TranslationTableOffset firstLetterTrans5;
+    TranslationTableOffset lastLetterTrans5;
+    TranslationTableOffset singleLetterTrans5;
+    TranslationTableOffset trans5Word;
+    TranslationTableOffset trans5WordStop;
+    TranslationTableOffset lenTrans5Phrase;
+    TranslationTableOffset firstWordTransNote;
+    TranslationTableOffset lastWordTransNoteBefore;
+    TranslationTableOffset lastWordTransNoteAfter;
+    TranslationTableOffset firstLetterTransNote;
+    TranslationTableOffset lastLetterTransNote;
+    TranslationTableOffset singleLetterTransNote;
+    TranslationTableOffset transNoteWord;
+    TranslationTableOffset transNoteWordStop;
+    TranslationTableOffset lenTransNotePhrase;
     /* End of ordered emphasis rule poiinters */
     TranslationTableOffset lenBeginCaps;
     TranslationTableOffset begComp;
@@ -469,6 +716,9 @@ extern "C"
   typedef enum
   {
     alloc_typebuf,
+	alloc_wordBuffer,
+	alloc_emphasisBuffer,
+	alloc_transNoteBuffer,
     alloc_destSpacing,
     alloc_passbuf1,
     alloc_passbuf2,
@@ -574,8 +824,9 @@ void logWidecharBuf(logLevels level, const char *msg, const widechar *wbuf, int 
 /* Helper for logging a widechar buffer */
 
 void logMessage(logLevels level, const char *format, ...);
-void closeLogFile();
 /* Function for closing loggin file */
+void closeLogFile();
+
 #ifdef __cplusplus
 }
 #endif				/* __cplusplus */

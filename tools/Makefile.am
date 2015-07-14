@@ -16,7 +16,8 @@ bin_PROGRAMS=					\
 	lou_checktable				\
 	lou_debug				\
 	lou_translate				\
-	lou_trace
+	lou_trace				\
+	lou_compare
 
 lou_allround_SOURCES= lou_allround.c
 lou_checkhyphens_SOURCES= lou_checkhyphens.c
@@ -24,6 +25,7 @@ lou_checktable_SOURCES = lou_checktable.c
 lou_debug_SOURCES = lou_debug.c
 lou_translate_SOURCES = lou_translate.c
 lou_trace_SOURCES = lou_trace.c
+lou_compare_SOURCES = lou_compare.c
 
 # distribute the harness generator but do not install it
 dist_bin_SCRIPTS = lou_harnessGenerator
