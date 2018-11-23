@@ -57,27 +57,6 @@ extern "C" {
 #define SEQPATTERNSIZE 128
 #define CHARSIZE sizeof(widechar)
 #define DEFAULTRULESIZE 50
-#define ENDSEGMENT 0xffff
-
-/**
- * Definitions of braille dots
- */
-#define B1 0X01
-#define B2 0X02
-#define B3 0X04
-#define B4 0X08
-#define B5 0X10
-#define B6 0X20
-#define B7 0X40
-#define B8 0X80
-#define B9 0X100
-#define B10 0X200
-#define B11 0X400
-#define B12 0X800
-#define B13 0X1000
-#define B14 0X2000
-#define B15 0X4000
-#define B16 0X8000
 
 typedef struct intCharTupple {
 	int key;

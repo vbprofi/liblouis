@@ -107,6 +107,29 @@ typedef enum {
 	partialTrans = 256
 } translationModes;
 
+/**
+ * Definitions of braille dots (need to be exposed because of dotsIO mode)
+ */
+#define B1 0X01
+#define B2 0X02
+#define B3 0X04
+#define B4 0X08
+#define B5 0X10
+#define B6 0X20
+#define B7 0X40
+#define B8 0X80
+#define B9 0X100
+#define B10 0X200  // A
+#define B11 0X400  // B
+#define B12 0X800  // C
+#define B13 0X1000 // D
+#define B14 0X2000 // E
+#define B15 0X4000 // F
+#define B16 0X8000 // 0
+
+// used in Liblouisutdml (to do what ?)
+#define ENDSEGMENT 0xffff // \xFFFF / 123456789ABCDEF
+
 LIBLOUIS_API
 char *EXPORT_CALL
 lou_version(void);
